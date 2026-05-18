@@ -1,3 +1,4 @@
+import joblib
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
@@ -37,3 +38,5 @@ print(f"✅ AI 모델 학습 완료! (정확도: {accuracy * 100:.2f}%)")
 print("=========================================")
 print("\n[상세 성적표]")
 print(classification_report(y_test, y_pred))
+joblib.dump(model, 'aegis_model.pkl')
+print("[*] AI 모델이 'aegis_model.pkl'로 저장되었습니다.")

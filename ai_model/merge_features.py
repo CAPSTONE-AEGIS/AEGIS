@@ -2,12 +2,12 @@ import pandas as pd
 import os
 
 # 1. 바뀐 폴더 경로 설정
-folder_path = r"C:\Users\kjs64\OneDrive\바탕 화면\AEGIS\data"
+folder_path = r"C:\Users\kjs64\OneDrive\바탕 화면\AEGIS\data/after_data"
 
 # 2. 합칠 파일 이름 목록
 # ⚠️ 실제로 생성하신 5개 파일의 이름과 정확히 일치하는지 확인해 주세요.
 file_names = [
-    "normal_002.csv",
+    "normal_003.csv",
     "port_scan.csv",
     "DNS.csv",
     "icmp_flood.csv",

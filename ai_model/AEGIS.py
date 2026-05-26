@@ -8,7 +8,7 @@ import os
 
 # 1. 병합된 데이터 불러오기
 # (이전 파일 경로와 동일하게 맞춰주세요)
-file_path = r"C:\Users\kjs64\OneDrive\바탕 화면\AEGIS\data\all_dataset.csv"
+file_path = r"C:\Users\kjs64\OneDrive\바탕 화면\AEGIS\data\after_data\all_dataset.csv"
 df = pd.read_csv(file_path)
 
 print(f"[*] 데이터 로드 완료: 총 {len(df)}개의 데이터")

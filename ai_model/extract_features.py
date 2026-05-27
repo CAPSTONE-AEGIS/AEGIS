@@ -112,8 +112,8 @@ def extract_to_csv(input_file, output_csv, label):
 if __name__ == "__main__":
     
     # ⚠️ 바탕화면 경로 설정
-    input_file = r"C:\Users\kjs64\OneDrive\바탕 화면\전처리 파일\normal_002.pcap"
-    output_csv = r"C:\Users\kjs64\OneDrive\바탕 화면\전처리 파일\normal_002.csv"
+    input_file = r"C:\Users\kjs64\OneDrive\바탕 화면\전처리 파일\normal_003.pcap"
+    output_csv = r"C:\Users\kjs64\OneDrive\바탕 화면\전처리 파일\normal_003.csv"
     
     # 라벨 세팅 (0: normal, 1:icmp, 2: port scan, 3: ssh, 4: arp, 5: DNS)   
     target_label = 0

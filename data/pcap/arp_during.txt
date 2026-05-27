@@ -1,3 +1,0 @@
-172.20.10.2 dev ens33 lladdr 3e:29:d2:3f:2f:20 STALE
-172.20.10.1 dev ens33 lladdr 3e:29:d2:3f:2f:20 REACHABLE
-fe80::68ef:dcff:febe:8b64 dev ens33 lladdr 6a:ef:dc:be:8b:64 router STALE

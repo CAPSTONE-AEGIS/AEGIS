@@ -1,0 +1,2 @@
+timestamp,total_pkt_cnt,tcp_cnt,udp_cnt,icmp_cnt,syn_cnt,ack_cnt,unique_dst_port_cnt,unique_src_ip_cnt,dns_query_cnt,gratuitous_arp_cnt,failed_login_cnt,mac_change_cnt,label
+block_0,5,0,0,0,0,0,0,0,0,0,0,0,4

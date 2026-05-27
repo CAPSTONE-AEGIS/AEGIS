@@ -12,7 +12,7 @@ import os
 AUTH_LOG_PATH = "/var/log/auth.log"
 
 # 특징 추출기가 데이터를 모아서 던져줄 중간 파일 (Predictor가 이걸 읽어감)
-FEATURE_OUT_FILE = "live_features.csv"
+FEATURE_OUT_FILE = PROJECT_ROOT / "data" / "collected_data" / "live_features.csv"
 
 # 시간 바구니 크기 (5초 동안 들어오는 패킷/로그를 하나로 뭉침)
 WINDOW_SIZE = 5

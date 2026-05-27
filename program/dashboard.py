@@ -6,7 +6,7 @@ import os
 
 # --- [초기 설정: 로그 파일 경로] ---
 # 실행하는 메인 폴더(Capstone) 기준으로 경로 수정 완료
-LOG_FILE = "live_dashboard.json"
+LOG_FILE = PROJECT_ROOT / "data" / "collected_data" / "live_dashboard.json"
 
 # 웹 페이지 탭 이름과 레이아웃 설정
 st.set_page_config(page_title="AEGIS 관제", page_icon="🛡️", layout="wide")

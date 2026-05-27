@@ -4,9 +4,9 @@ import os
 import pandas as pd
 
 # --- [초기 설정: 파일 경로] ---
-FEATURE_FILE = "live_features.csv"  # 1단계: Extractor가 뱉는 파일
-PREDICT_FILE = "live_predictions.csv"  # 2단계: Predictor가 뱉는 파일
-DASHBOARD_FILE = "live_dashboard.json"  # 4단계: Dashboard가 읽을 최종 파일
+FEATURE_FILE = PROJECT_ROOT / "data" / "collected_data" / "live_features.csv"
+PREDICT_FILE = PROJECT_ROOT / "data" / "collected_data" / "live_predictions.csv"
+DASHBOARD_FILE = PROJECT_ROOT / "data" / "collected_data" / "live_dashboard.json"
 
 print(f"[*] Monitor 가동: 데이터 병합 및 JSON 변환을 시작합니다...")
 

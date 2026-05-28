@@ -123,7 +123,7 @@ def main():
     # 4. Streamlit Dashboard
     start_process(
         "Dashboard",
-        ["streamlit", "run", str(DASHBOARD)],
+        [python_cmd, "-m", "streamlit", "run", str(DASHBOARD)],
     )
 
     print("\n=========================================")

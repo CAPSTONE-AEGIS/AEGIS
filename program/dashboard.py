@@ -3,6 +3,7 @@ import pandas as pd
 import json
 import time
 import os
+from pathlib import Path
 
 # --- [초기 설정: 로그 파일 경로] ---
 # 실행하는 메인 폴더(Capstone) 기준으로 경로 수정 완료

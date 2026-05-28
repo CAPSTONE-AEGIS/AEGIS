@@ -2,6 +2,7 @@ import time
 import json
 import os
 import pandas as pd
+from pathlib import Path
 
 # --- [초기 설정: 파일 경로] ---
 FEATURE_FILE = PROJECT_ROOT / "data" / "collected_data" / "live_features.csv"

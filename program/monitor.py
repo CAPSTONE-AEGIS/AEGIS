@@ -1,69 +1,201 @@
 import time
 import json
-import os
 import pandas as pd
 from pathlib import Path
 
-# --- [초기 설정: 파일 경로] ---
-FEATURE_FILE = PROJECT_ROOT / "data" / "collected_data" / "live_features.csv"
-PREDICT_FILE = PROJECT_ROOT / "data" / "collected_data" / "live_predictions.csv"
-DASHBOARD_FILE = PROJECT_ROOT / "data" / "collected_data" / "live_dashboard.json"
+# ---------------------------------------------------------
+# 1. 파일 경로 설정
+# ---------------------------------------------------------
+# 현재 파일 위치:
+# AEGIS/program/monitor.py
+#
+# PROJECT_ROOT:
+# AEGIS/
+# ---------------------------------------------------------
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
-print(f"[*] Monitor 가동: 데이터 병합 및 JSON 변환을 시작합니다...")
+COLLECTED_DATA_DIR = PROJECT_ROOT / "data" / "collected_data"
+COLLECTED_DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-# 이미 JSON으로 구워내서 대시보드로 보낸 타임스탬프를 기억 (중복 처리 방지용)
-processed_timestamps = set()
+FEATURE_FILE = COLLECTED_DATA_DIR / "live_features.csv"
+PREDICT_FILE = COLLECTED_DATA_DIR / "live_predictions.csv"
+DASHBOARD_FILE = COLLECTED_DATA_DIR / "live_dashboard.json"
 
-while True:
+
+# ---------------------------------------------------------
+# 2. label 번호 → 공격 이름 매핑
+# ---------------------------------------------------------
+LABEL_MAP = {
+    0: "Normal",
+    1: "ICMP Flood",
+    2: "Port Scan",
+    3: "SSH Brute Force",
+    4: "DNS Anomaly",
+    5: "ARP Spoofing",
+}
+
+
+RISK_MAP = {
+    0: "Low",
+    1: "High",
+    2: "Medium",
+    3: "High",
+    4: "Medium",
+    5: "High",
+}
+
+
+# ---------------------------------------------------------
+# 3. 이미 처리된 timestamp 로드
+# ---------------------------------------------------------
+def load_processed_timestamps():
+    processed = set()
+
+    if not DASHBOARD_FILE.exists():
+        return processed
+
     try:
-        # 두 파일이 모두 존재할 때만 병합 시도
-        if os.path.exists(FEATURE_FILE) and os.path.exists(PREDICT_FILE):
+        with open(DASHBOARD_FILE, "r", encoding="utf-8") as f:
+            for line in f:
+                if not line.strip():
+                    continue
 
-            # 1. 파일 읽어오기
+                try:
+                    record = json.loads(line)
+                    if "timestamp" in record:
+                        processed.add(int(record["timestamp"]))
+                except json.JSONDecodeError:
+                    continue
+
+    except FileNotFoundError:
+        pass
+
+    return processed
+
+
+# ---------------------------------------------------------
+# 4. pandas/numpy 타입을 JSON 저장 가능한 타입으로 변환
+# ---------------------------------------------------------
+def clean_value(value):
+    if pd.isna(value):
+        return None
+
+    if hasattr(value, "item"):
+        return value.item()
+
+    return value
+
+
+def row_to_clean_dict(row):
+    record = {}
+
+    for key, value in row.to_dict().items():
+        record[key] = clean_value(value)
+
+    return record
+
+
+# ---------------------------------------------------------
+# 5. 메인 루프
+# ---------------------------------------------------------
+def main():
+    print("[*] Monitor 가동: 데이터 병합 및 JSON 변환을 시작합니다.")
+    print(f"[*] feature 입력 파일: {FEATURE_FILE}")
+    print(f"[*] prediction 입력 파일: {PREDICT_FILE}")
+    print(f"[*] dashboard 출력 파일: {DASHBOARD_FILE}")
+
+    processed_timestamps = load_processed_timestamps()
+
+    print(f"[*] 기존 처리 완료 timestamp 수: {len(processed_timestamps)}")
+
+    while True:
+        try:
+            if not FEATURE_FILE.exists() or not PREDICT_FILE.exists():
+                time.sleep(1)
+                continue
+
             df_features = pd.read_csv(FEATURE_FILE)
             df_preds = pd.read_csv(PREDICT_FILE)
 
-            # 2. 'timestamp'를 기준으로 두 데이터 완벽하게 병합 (Inner Join)
-            # (같은 시간대에 발생한 특징과 AI 라벨이 한 줄로 합쳐짐)
-            df_merged = pd.merge(df_features, df_preds, on="timestamp", how="inner")
+            if df_features.empty or df_preds.empty:
+                time.sleep(1)
+                continue
+
+            if "timestamp" not in df_features.columns:
+                print("[ERROR] live_features.csv에 timestamp 컬럼이 없습니다.")
+                time.sleep(2)
+                continue
+
+            if "timestamp" not in df_preds.columns:
+                print("[ERROR] live_predictions.csv에 timestamp 컬럼이 없습니다.")
+                time.sleep(2)
+                continue
+
+            if "label" not in df_preds.columns:
+                print("[ERROR] live_predictions.csv에 label 컬럼이 없습니다.")
+                time.sleep(2)
+                continue
+
+            df_merged = pd.merge(
+                df_features,
+                df_preds,
+                on="timestamp",
+                how="inner",
+            )
+
+            if df_merged.empty:
+                time.sleep(1)
+                continue
 
             new_logs_count = 0
 
-            # 3. JSON 파일에 이어쓰기 (a 모드)
             with open(DASHBOARD_FILE, "a", encoding="utf-8") as f:
                 for _, row in df_merged.iterrows():
                     ts = int(row["timestamp"])
 
-                    # 아직 처리 안 한 새로운 시간대의 데이터라면?
-                    if ts not in processed_timestamps:
-                        # 데이터프레임 1줄을 딕셔너리로 변환
-                        record = row.to_dict()
+                    if ts in processed_timestamps:
+                        continue
 
-                        # 대시보드에서 숫자 깨지지 않게 깔끔한 정수(int)로 팩트 체크
-                        record["timestamp"] = ts
-                        record["label"] = int(record["label"])
+                    record = row_to_clean_dict(row)
 
-                        # (선택) 대시보드에 띄울 직관적인 메시지 추가
-                        record["alert_message"] = f"위협 레벨 {record['label']} 탐지"
+                    label = int(record["label"])
 
-                        # 4. 딕셔너리를 JSON 문자열로 바꿔서 파일에 한 줄씩 기록
-                        f.write(json.dumps(record, ensure_ascii=False) + "\n")
+                    record["timestamp"] = ts
+                    record["label"] = label
+                    record["attack_type"] = LABEL_MAP.get(label, "Unknown")
+                    record["risk_level"] = RISK_MAP.get(label, "Unknown")
 
-                        # 방금 처리한 시간은 기억해둠
-                        processed_timestamps.add(ts)
-                        new_logs_count += 1
+                    if label == 0:
+                        record["alert_message"] = "정상 트래픽으로 판단됨"
+                    else:
+                        record["alert_message"] = (
+                            f"{record['attack_type']} 공격 의심 트래픽 탐지"
+                        )
+
+                    f.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+                    processed_timestamps.add(ts)
+                    new_logs_count += 1
 
             if new_logs_count > 0:
                 print(
-                    f"[+] {new_logs_count}개의 새 로그 병합 완료 -> {DASHBOARD_FILE} 전송"
+                    f"[+] {new_logs_count}개의 새 로그 병합 완료 "
+                    f"-> {DASHBOARD_FILE}"
                 )
 
-        # 2초 대기 (CPU 100% 과부하 방지)
-        time.sleep(2)
+            time.sleep(2)
 
-    except pd.errors.EmptyDataError:
-        # 파일이 막 생성되어서 내용이 텅 비어있을 때 나는 에러 무시
-        time.sleep(1)
-    except Exception as e:
-        # 파일 동시 접근 충돌 등 기타 에러 발생 시 잠깐 쉬고 재시도
-        time.sleep(1)
+        except pd.errors.EmptyDataError:
+            time.sleep(1)
+
+        except KeyboardInterrupt:
+            print("\n[*] Monitor 종료")
+            break
+
+        except Exception as e:
+            print(f"[ERROR] {e}")
+            time.sleep(1)
+
+
+if __name__ == "__main__":
+    main()

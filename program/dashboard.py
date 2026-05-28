@@ -2,70 +2,158 @@ import streamlit as st
 import pandas as pd
 import json
 import time
-import os
 from pathlib import Path
 
-# --- [초기 설정: 로그 파일 경로] ---
-# 실행하는 메인 폴더(Capstone) 기준으로 경로 수정 완료
-LOG_FILE = PROJECT_ROOT / "data" / "collected_data" / "live_dashboard.json"
+# ---------------------------------------------------------
+# 1. 파일 경로 설정
+# ---------------------------------------------------------
+# 현재 파일 위치:
+# AEGIS/program/dashboard.py
+#
+# PROJECT_ROOT:
+# AEGIS/
+# ---------------------------------------------------------
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
-# 웹 페이지 탭 이름과 레이아웃 설정
-st.set_page_config(page_title="AEGIS 관제", page_icon="🛡️", layout="wide")
+COLLECTED_DATA_DIR = PROJECT_ROOT / "data" / "collected_data"
+LOG_FILE = COLLECTED_DATA_DIR / "live_dashboard.json"
+
+
+# ---------------------------------------------------------
+# 2. Streamlit 기본 설정
+# ---------------------------------------------------------
+st.set_page_config(
+    page_title="AEGIS 관제",
+    page_icon="🛡️",
+    layout="wide",
+)
+
 st.title("🛡️ AEGIS 실시간 네트워크 관제 대시보드")
 
 
-# --- [데이터 로드 함수] ---
+# ---------------------------------------------------------
+# 3. label 매핑
+# ---------------------------------------------------------
+LABEL_MAP = {
+    0: "Normal",
+    1: "ICMP Flood",
+    2: "Port Scan",
+    3: "SSH Brute Force",
+    4: "DNS Anomaly",
+    5: "ARP Spoofing",
+}
+
+
+# ---------------------------------------------------------
+# 4. 데이터 로드 함수
+# ---------------------------------------------------------
 def load_data():
     data = []
-    if os.path.exists(LOG_FILE):
-        with open(LOG_FILE, "r", encoding="utf-8") as f:
-            for line in f:
-                if line.strip():  # 빈 줄 무시
-                    data.append(json.loads(line.strip()))
+
+    if not LOG_FILE.exists():
+        return pd.DataFrame(data)
+
+    with open(LOG_FILE, "r", encoding="utf-8") as f:
+        for line in f:
+            if not line.strip():
+                continue
+
+            try:
+                data.append(json.loads(line.strip()))
+            except json.JSONDecodeError:
+                continue
+
     return pd.DataFrame(data)
 
 
-# --- [실시간 화면 렌더링 영역] ---
-# st.empty()를 사용해 화면이 아래로 늘어나지 않고 제자리에서 새로고침되게 만듦
+# ---------------------------------------------------------
+# 5. 실시간 화면 렌더링
+# ---------------------------------------------------------
 placeholder = st.empty()
 
 with placeholder.container():
     df = load_data()
 
     if not df.empty:
-        # 1. 상단 요약 (가장 최근 데이터 기준)
         total_logs = len(df)
-        recent_label = df.iloc[-1]["label"]
+        recent = df.iloc[-1]
 
-        col1, col2 = st.columns(2)
-        col1.metric("총 수집된 트래픽 로그", f"{total_logs} 건")
+        recent_label = int(recent.get("label", 0))
+        recent_attack = recent.get(
+            "attack_type", LABEL_MAP.get(recent_label, "Unknown")
+        )
+        recent_risk = recent.get("risk_level", "Unknown")
+
+        # -------------------------------------------------
+        # 상단 요약
+        # -------------------------------------------------
+        col1, col2, col3 = st.columns(3)
+
+        col1.metric("총 수집 로그", f"{total_logs} 건")
 
         if recent_label == 0:
-            col2.metric("최근 위협 상태", "✅ 정상 (0)")
+            col2.metric("최근 위협 상태", "✅ 정상")
         else:
-            col2.metric("최근 위협 상태", f"🚨 탐지됨 ({recent_label})")
+            col2.metric("최근 위협 상태", f"🚨 {recent_attack}")
+
+        col3.metric("위험도", recent_risk)
 
         st.markdown("---")
 
-        # 2. 좌우 분할 화면 (차트와 상세 표)
+        # -------------------------------------------------
+        # 차트 + 최근 로그
+        # -------------------------------------------------
         chart_col, table_col = st.columns([1, 2])
 
         with chart_col:
-            st.subheader("📊 위협 레벨 분포")
-            label_counts = df["label"].value_counts()
-            st.bar_chart(label_counts)
+            st.subheader("📊 공격 유형 분포")
+
+            if "attack_type" in df.columns:
+                attack_counts = df["attack_type"].value_counts()
+            else:
+                attack_counts = df["label"].value_counts()
+
+            st.bar_chart(attack_counts)
 
         with table_col:
-            st.subheader("📋 최근 10건의 상세 로그")
-            # 가장 최근 로그가 맨 위로 오도록 역순 정렬
+            st.subheader("📋 최근 10건 탐지 로그")
             st.dataframe(df.iloc[::-1].head(10), use_container_width=True)
+
+        st.markdown("---")
+
+        # -------------------------------------------------
+        # 주요 feature 변화
+        # -------------------------------------------------
+        st.subheader("📈 주요 Feature 변화")
+
+        feature_cols = [
+            "total_pkt_cnt",
+            "tcp_cnt",
+            "udp_cnt",
+            "icmp_cnt",
+            "syn_cnt",
+            "ack_cnt",
+            "dns_query_cnt",
+            "failed_login_cnt",
+            "mac_change_cnt",
+        ]
+
+        existing_cols = [col for col in feature_cols if col in df.columns]
+
+        if existing_cols:
+            st.line_chart(df[existing_cols].tail(30))
+        else:
+            st.info("표시할 feature 컬럼이 아직 없습니다.")
 
     else:
         st.info(
-            "데이터 수집 대기 중... (터미널에서 Extractor와 Monitor가 켜져 있는지 확인하세요)"
+            "데이터 수집 대기 중... "
+            "feature_extractor.py, predictor.py, monitor.py가 실행 중인지 확인하세요."
         )
 
-# --- [무한 새로고침 로직] ---
-# 2초마다 화면 전체를 다시 그려서 실시간 관제 효과를 냄
+
+# ---------------------------------------------------------
+# 6. 자동 새로고침
+# ---------------------------------------------------------
 time.sleep(2)
 st.rerun()

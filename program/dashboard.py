@@ -39,8 +39,8 @@ LABEL_MAP = {
     1: "ICMP Flood",
     2: "Port Scan",
     3: "SSH Brute Force",
-    4: "DNS Anomaly",
-    5: "ARP Spoofing",
+    4: "ARP Spoofing",
+    5: "DNS Anomaly",
 }
 
 

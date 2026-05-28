@@ -54,8 +54,8 @@ LABEL_MAP = {
     1: "ICMP Flood",
     2: "Port Scan",
     3: "SSH Brute Force",
-    4: "DNS Anomaly",
-    5: "ARP Spoofing",
+    4: "ARP Spoofing",
+    5: "DNS Anomaly",
 }
 
 
@@ -129,7 +129,21 @@ def predict_new_rows(model, processed_timestamps):
             columns=FEATURE_COLUMNS,
         )
 
-        label = int(model.predict(X)[0])
+        traffic_sum = (
+            int(row["total_pkt_cnt"])
+            + int(row["tcp_cnt"])
+            + int(row["udp_cnt"])
+            + int(row["icmp_cnt"])
+            + int(row["dns_query_cnt"])
+            + int(row["gratuitous_arp_cnt"])
+            + int(row["failed_login_cnt"])
+            + int(row["mac_change_cnt"])
+        )
+
+        if traffic_sum == 0:
+            label = 0
+        else:
+            label = int(model.predict(X)[0])
 
         new_predictions.append(
             {

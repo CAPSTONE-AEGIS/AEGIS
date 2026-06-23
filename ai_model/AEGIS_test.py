@@ -1,8 +1,13 @@
 import warnings
+import os
+import sys
 from pathlib import Path
 
 import joblib
 import pandas as pd
+
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
 
 # ---------------------------------------------------------
 # 1. 경고 숨기기
@@ -22,6 +27,10 @@ warnings.filterwarnings("ignore")
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 MODEL_PATH = PROJECT_ROOT / "ai_model" / "AEGIS.pkl"
+ANOMALY_MODEL_PATH = PROJECT_ROOT / "ai_model" / "AEGIS_anomaly.pkl"
+SUSPICIOUS_LABEL = -2
+UNKNOWN_LABEL = -1
+CONFIDENCE_THRESHOLD = float(os.getenv("AEGIS_UNKNOWN_THRESHOLD", "0.80"))
 
 # 테스트할 CSV 파일
 # 1) 병합 데이터셋 전체 테스트용
@@ -53,7 +62,9 @@ FEATURE_COLUMNS = [
 
 
 LABEL_MAP = {
-    0: "Normal",
+    SUSPICIOUS_LABEL: "SUSPICIOUS",
+    UNKNOWN_LABEL: "UNKNOWN",
+    0: "NORMAL",
     1: "ICMP Flood",
     2: "Port Scan",
     3: "SSH Brute Force",
@@ -88,6 +99,7 @@ print(f"[*] 모델 경로: {MODEL_PATH}")
 print(f"[*] 테스트 CSV 경로: {TEST_CSV_PATH}")
 
 model = joblib.load(MODEL_PATH)
+anomaly_model = joblib.load(ANOMALY_MODEL_PATH) if ANOMALY_MODEL_PATH.exists() else None
 df_test = pd.read_csv(TEST_CSV_PATH)
 
 print(f"✅ 로드 완료: 총 {len(df_test)}행을 테스트합니다.\n")
@@ -113,7 +125,34 @@ X_test = df_test[FEATURE_COLUMNS]
 # ---------------------------------------------------------
 # 7. AEGIS 모델 예측
 # ---------------------------------------------------------
-predictions = model.predict(X_test)
+if hasattr(model, "predict_proba"):
+    proba = model.predict_proba(X_test)
+    confidence = proba.max(axis=1)
+    model_predictions = model.classes_[proba.argmax(axis=1)]
+    predictions = [
+        UNKNOWN_LABEL if conf < CONFIDENCE_THRESHOLD else int(model_label)
+        for model_label, conf in zip(model_predictions, confidence)
+    ]
+else:
+    model_predictions = model.predict(X_test)
+    confidence = [None] * len(model_predictions)
+    predictions = model_predictions
+
+if anomaly_model is not None:
+    anomaly_predictions = anomaly_model.predict(X_test)
+    is_anomaly = anomaly_predictions == -1
+    if hasattr(anomaly_model, "decision_function"):
+        anomaly_score = anomaly_model.decision_function(X_test)
+    else:
+        anomaly_score = [None] * len(predictions)
+
+    predictions = [
+        SUSPICIOUS_LABEL if anomaly and label == UNKNOWN_LABEL else label
+        for label, anomaly in zip(predictions, is_anomaly)
+    ]
+else:
+    is_anomaly = [False] * len(predictions)
+    anomaly_score = [None] * len(predictions)
 
 
 # ---------------------------------------------------------
@@ -122,8 +161,13 @@ predictions = model.predict(X_test)
 df_result = df_test.copy()
 
 df_result["AEGIS_Prediction"] = predictions
+df_result["AEGIS_Model_Label"] = model_predictions
+df_result["AEGIS_Confidence"] = confidence
+df_result["AEGIS_Is_Anomaly"] = is_anomaly
+df_result["AEGIS_Anomaly_Score"] = anomaly_score
 df_result["AEGIS_Attack_Name"] = df_result["AEGIS_Prediction"].map(LABEL_MAP)
 df_result["AEGIS_탐지명"] = df_result["AEGIS_Prediction"].map(LABEL_MAP_KR)
+df_result["AEGIS_탐지명"] = df_result["AEGIS_탐지명"].fillna("UNKNOWN")
 
 
 # ---------------------------------------------------------
@@ -146,6 +190,10 @@ show_cols = [
     "failed_login_cnt",
     "mac_change_cnt",
     "AEGIS_Prediction",
+    "AEGIS_Model_Label",
+    "AEGIS_Confidence",
+    "AEGIS_Is_Anomaly",
+    "AEGIS_Anomaly_Score",
     "AEGIS_탐지명",
 ]
 

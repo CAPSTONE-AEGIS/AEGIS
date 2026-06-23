@@ -1,10 +1,17 @@
 import joblib
 import pandas as pd
+import sys
 from pathlib import Path
 
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.neighbors import LocalOutlierFactor
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import classification_report, accuracy_score
+
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
 
 # ---------------------------------------------------------
 # 1. 프로젝트 경로 설정
@@ -19,6 +26,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 DATA_PATH = PROJECT_ROOT / "data" / "processed_data" / "merged_data" / "all_dataset.csv"
 MODEL_PATH = PROJECT_ROOT / "ai_model" / "AEGIS.pkl"
+ANOMALY_MODEL_PATH = PROJECT_ROOT / "ai_model" / "AEGIS_anomaly.pkl"
 
 
 # ---------------------------------------------------------
@@ -65,6 +73,17 @@ model = RandomForestClassifier(
 
 model.fit(X_train, y_train)
 
+normal_train = X_train[y_train == 0]
+anomaly_model = make_pipeline(
+    StandardScaler(),
+    LocalOutlierFactor(
+        n_neighbors=20,
+        contamination=0.10,
+        novelty=True,
+    ),
+)
+anomaly_model.fit(normal_train)
+
 
 # ---------------------------------------------------------
 # 6. 테스트 데이터로 성능 평가
@@ -87,6 +106,8 @@ print(classification_report(y_test, y_pred))
 MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 joblib.dump(model, MODEL_PATH)
+joblib.dump(anomaly_model, ANOMALY_MODEL_PATH)
+print(f"[*] anomaly model path: {ANOMALY_MODEL_PATH}")
 
 print(f"\n✅ 완료: 학습된 모델이 저장되었습니다.")
 print(f"[*] 모델 저장 경로: {MODEL_PATH}")

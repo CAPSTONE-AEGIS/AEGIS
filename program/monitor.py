@@ -20,13 +20,17 @@ COLLECTED_DATA_DIR.mkdir(parents=True, exist_ok=True)
 FEATURE_FILE = COLLECTED_DATA_DIR / "live_features.csv"
 PREDICT_FILE = COLLECTED_DATA_DIR / "live_predictions.csv"
 DASHBOARD_FILE = COLLECTED_DATA_DIR / "live_dashboard.json"
+SUSPICIOUS_LABEL = -2
+UNKNOWN_LABEL = -1
 
 
 # ---------------------------------------------------------
 # 2. label 번호 → 공격 이름 매핑
 # ---------------------------------------------------------
 LABEL_MAP = {
-    0: "Normal",
+    SUSPICIOUS_LABEL: "SUSPICIOUS",
+    UNKNOWN_LABEL: "UNKNOWN",
+    0: "NORMAL",
     1: "ICMP Flood",
     2: "Port Scan",
     3: "SSH Brute Force",
@@ -35,6 +39,8 @@ LABEL_MAP = {
 }
 
 RISK_MAP = {
+    SUSPICIOUS_LABEL: "Medium",
+    UNKNOWN_LABEL: "UNKNOWN",
     0: "Low",
     1: "High",
     2: "Medium",
@@ -161,10 +167,28 @@ def main():
 
                     record["timestamp"] = ts
                     record["label"] = label
-                    record["attack_type"] = LABEL_MAP.get(label, "Unknown")
-                    record["risk_level"] = RISK_MAP.get(label, "Unknown")
+                    record["attack_type"] = LABEL_MAP.get(label, "UNKNOWN")
+                    record["risk_level"] = RISK_MAP.get(label, "UNKNOWN")
 
-                    if label == 0:
+                    if label == SUSPICIOUS_LABEL:
+                        model_label = record.get("model_label")
+                        confidence = record.get("confidence")
+                        anomaly_score = record.get("anomaly_score")
+                        model_attack = LABEL_MAP.get(model_label, "UNKNOWN")
+                        record["alert_message"] = (
+                            f"SUSPICIOUS traffic detected "
+                            f"(model={model_attack}, confidence={confidence}, "
+                            f"anomaly_score={anomaly_score})"
+                        )
+                    elif label == UNKNOWN_LABEL:
+                        model_label = record.get("model_label")
+                        confidence = record.get("confidence")
+                        model_attack = LABEL_MAP.get(model_label, "UNKNOWN")
+                        record["alert_message"] = (
+                            f"UNKNOWN traffic detected "
+                            f"(model={model_attack}, confidence={confidence})"
+                        )
+                    elif label == 0:
                         record["alert_message"] = "정상 트래픽으로 판단됨"
                     else:
                         record["alert_message"] = (

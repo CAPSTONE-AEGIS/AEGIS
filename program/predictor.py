@@ -1,5 +1,6 @@
 import time
 import warnings
+import os
 from pathlib import Path
 
 import joblib
@@ -25,6 +26,11 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 FEATURE_FILE = PROJECT_ROOT / "data" / "collected_data" / "live_features.csv"
 PREDICT_FILE = PROJECT_ROOT / "data" / "collected_data" / "live_predictions.csv"
 MODEL_FILE = PROJECT_ROOT / "ai_model" / "AEGIS.pkl"
+ANOMALY_MODEL_FILE = PROJECT_ROOT / "ai_model" / "AEGIS_anomaly.pkl"
+SUSPICIOUS_LABEL = -2
+UNKNOWN_LABEL = -1
+CONFIDENCE_THRESHOLD = float(os.getenv("AEGIS_UNKNOWN_THRESHOLD", "0.80"))
+ENABLE_ANOMALY_DETECTION = os.getenv("AEGIS_ENABLE_ANOMALY", "1") != "0"
 
 
 # ---------------------------------------------------------
@@ -50,7 +56,9 @@ FEATURE_COLUMNS = [
 
 
 LABEL_MAP = {
-    0: "Normal",
+    SUSPICIOUS_LABEL: "SUSPICIOUS",
+    UNKNOWN_LABEL: "UNKNOWN",
+    0: "NORMAL",
     1: "ICMP Flood",
     2: "Port Scan",
     3: "SSH Brute Force",
@@ -67,7 +75,78 @@ def init_prediction_file():
 
     if not PREDICT_FILE.exists():
         with open(PREDICT_FILE, "w", encoding="utf-8") as f:
-            f.write("timestamp,label\n")
+            f.write("timestamp,label,model_label,confidence,is_anomaly,anomaly_score\n")
+        return
+
+    try:
+        df = pd.read_csv(PREDICT_FILE)
+    except pd.errors.EmptyDataError:
+        with open(PREDICT_FILE, "w", encoding="utf-8") as f:
+            f.write("timestamp,label,model_label,confidence,is_anomaly,anomaly_score\n")
+        return
+
+    changed = False
+
+    if "model_label" not in df.columns:
+        df["model_label"] = df["label"] if "label" in df.columns else UNKNOWN_LABEL
+        changed = True
+
+    if "confidence" not in df.columns:
+        df["confidence"] = None
+        changed = True
+
+    if "is_anomaly" not in df.columns:
+        df["is_anomaly"] = False
+        changed = True
+
+    if "anomaly_score" not in df.columns:
+        df["anomaly_score"] = None
+        changed = True
+
+    if changed:
+        df.to_csv(PREDICT_FILE, index=False)
+
+
+def predict_with_confidence(model, X):
+    if not hasattr(model, "predict_proba"):
+        model_label = int(model.predict(X)[0])
+        return model_label, model_label, None
+
+    proba = model.predict_proba(X)[0]
+    best_idx = int(proba.argmax())
+    confidence = float(proba[best_idx])
+    model_label = int(model.classes_[best_idx])
+
+    if confidence < CONFIDENCE_THRESHOLD:
+        return UNKNOWN_LABEL, model_label, confidence
+
+    return model_label, model_label, confidence
+
+
+def load_anomaly_model():
+    if not ENABLE_ANOMALY_DETECTION:
+        print("[*] anomaly detection disabled")
+        return None
+
+    if not ANOMALY_MODEL_FILE.exists():
+        print(f"[*] anomaly model not found: {ANOMALY_MODEL_FILE}")
+        return None
+
+    print(f"[*] anomaly model file: {ANOMALY_MODEL_FILE}")
+    return joblib.load(ANOMALY_MODEL_FILE)
+
+
+def check_anomaly(anomaly_model, X):
+    if anomaly_model is None:
+        return False, None
+
+    is_anomaly = int(anomaly_model.predict(X)[0]) == -1
+    anomaly_score = None
+
+    if hasattr(anomaly_model, "decision_function"):
+        anomaly_score = float(anomaly_model.decision_function(X)[0])
+
+    return is_anomaly, anomaly_score
 
 
 # ---------------------------------------------------------
@@ -94,7 +173,7 @@ def load_processed_timestamps():
 # ---------------------------------------------------------
 # 6. feature 파일에서 새 행 읽고 예측
 # ---------------------------------------------------------
-def predict_new_rows(model, processed_timestamps):
+def predict_new_rows(model, processed_timestamps, anomaly_model=None):
     if not FEATURE_FILE.exists():
         return []
 
@@ -142,13 +221,25 @@ def predict_new_rows(model, processed_timestamps):
 
         if traffic_sum == 0:
             label = 0
+            model_label = 0
+            confidence = 1.0
+            is_anomaly = False
+            anomaly_score = None
         else:
-            label = int(model.predict(X)[0])
+            label, model_label, confidence = predict_with_confidence(model, X)
+            is_anomaly, anomaly_score = check_anomaly(anomaly_model, X)
+
+            if is_anomaly and label == UNKNOWN_LABEL:
+                label = SUSPICIOUS_LABEL
 
         new_predictions.append(
             {
                 "timestamp": ts,
                 "label": label,
+                "model_label": model_label,
+                "confidence": confidence,
+                "is_anomaly": is_anomaly,
+                "anomaly_score": anomaly_score,
             }
         )
 
@@ -183,26 +274,32 @@ def main():
     print(f"[*] 출력 파일: {PREDICT_FILE}")
 
     model = joblib.load(MODEL_FILE)
+    anomaly_model = load_anomaly_model()
     processed_timestamps = load_processed_timestamps()
+    print(f"[*] unknown confidence threshold: {CONFIDENCE_THRESHOLD:.2f}")
 
     print(f"[*] 기존 예측 완료 timestamp 수: {len(processed_timestamps)}")
 
     while True:
         try:
-            predictions = predict_new_rows(model, processed_timestamps)
+            predictions = predict_new_rows(model, processed_timestamps, anomaly_model)
 
             if predictions:
                 append_predictions(predictions)
 
                 for pred in predictions:
                     label = pred["label"]
-                    attack_name = LABEL_MAP.get(label, "Unknown")
+                    attack_name = LABEL_MAP.get(label, "UNKNOWN")
 
                     print(
                         f"[+] 예측 완료: "
                         f"timestamp={pred['timestamp']}, "
                         f"label={label}, "
-                        f"attack={attack_name}"
+                        f"attack={attack_name}, "
+                        f"model_label={pred['model_label']}, "
+                        f"confidence={pred['confidence']}, "
+                        f"is_anomaly={pred['is_anomaly']}, "
+                        f"anomaly_score={pred['anomaly_score']}"
                     )
 
             time.sleep(1)

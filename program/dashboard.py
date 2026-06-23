@@ -35,7 +35,9 @@ st.title("🛡️ AEGIS 실시간 네트워크 관제 대시보드")
 # 3. label 매핑
 # ---------------------------------------------------------
 LABEL_MAP = {
-    0: "Normal",
+    -2: "SUSPICIOUS",
+    -1: "UNKNOWN",
+    0: "NORMAL",
     1: "ICMP Flood",
     2: "Port Scan",
     3: "SSH Brute Force",
@@ -80,9 +82,9 @@ with placeholder.container():
 
         recent_label = int(recent.get("label", 0))
         recent_attack = recent.get(
-            "attack_type", LABEL_MAP.get(recent_label, "Unknown")
+            "attack_type", LABEL_MAP.get(recent_label, "UNKNOWN")
         )
-        recent_risk = recent.get("risk_level", "Unknown")
+        recent_risk = recent.get("risk_level", "UNKNOWN")
 
         # -------------------------------------------------
         # 상단 요약

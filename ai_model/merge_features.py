@@ -1,15 +1,8 @@
-import pandas as pd
 from pathlib import Path
 
-# ---------------------------------------------------------
-# 1. 프로젝트 경로 설정
-# ---------------------------------------------------------
-# 현재 파일 위치:
-# AEGIS/ai_model/merge_features.py
-#
-# PROJECT_ROOT:
-# AEGIS/
-# ---------------------------------------------------------
+import pandas as pd
+
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 PROCESSED_DATA_DIR = PROJECT_ROOT / "data" / "processed_data"
@@ -17,10 +10,9 @@ MERGED_DATA_DIR = PROCESSED_DATA_DIR / "merged_data"
 OUTPUT_PATH = MERGED_DATA_DIR / "all_dataset.csv"
 
 
-# ---------------------------------------------------------
-# 2. 합칠 feature 파일 목록
-# ---------------------------------------------------------
-feature_file_groups = [
+# Prefer freshly generated files from extract_features.py. If they are absent,
+# fall back to the grouped CSV files already committed in merged_data.
+FEATURE_FILE_GROUPS = [
     ["normal_features.csv", MERGED_DATA_DIR / "normal.csv"],
     ["icmp_features.csv", MERGED_DATA_DIR / "icmp_flood.csv"],
     ["port_features.csv", MERGED_DATA_DIR / "port_scan.csv"],
@@ -30,54 +22,50 @@ feature_file_groups = [
 ]
 
 
-# ---------------------------------------------------------
-# 3. 병합 실행
-# ---------------------------------------------------------
+def resolve_feature_file(candidates):
+    for candidate in candidates:
+        path = candidate if isinstance(candidate, Path) else PROCESSED_DATA_DIR / candidate
+
+        if path.exists():
+            return path
+
+    return None
+
+
 def merge_features():
-    print("[*] 데이터 병합을 시작합니다.")
-    print(f"[*] 입력 폴더: {PROCESSED_DATA_DIR}")
+    print("[*] Starting feature merge")
+    print(f"[*] Processed data dir: {PROCESSED_DATA_DIR}")
 
     df_list = []
 
-    for candidates in feature_file_groups:
-        file_path = None
+    for candidates in FEATURE_FILE_GROUPS:
+        file_path = resolve_feature_file(candidates)
 
-        for candidate in candidates:
-            candidate_path = candidate if isinstance(candidate, Path) else PROCESSED_DATA_DIR / candidate
-
-            if candidate_path.exists():
-                file_path = candidate_path
-                break
-
-        if not file_path.exists():
-            print(f"❌ 파일 없음: {file_path}")
+        if file_path is None:
+            print(f"[WARN] Missing feature group: {candidates}")
             continue
 
         df = pd.read_csv(file_path)
-        print(f" - {file_name} 읽기 완료: {len(df)}행")
+        print(f" - loaded {file_path.name}: {len(df)} rows")
 
         df_list.append(df)
 
     if not df_list:
-        print("\n❌ 읽어온 데이터가 없어 병합을 진행하지 못했습니다.")
+        print("[ERROR] No feature files were found; merge skipped.")
         return
 
     combined_df = pd.concat(df_list, ignore_index=True)
 
-    # 저장 폴더 생성
     MERGED_DATA_DIR.mkdir(parents=True, exist_ok=True)
-
-    # 저장
     combined_df.to_csv(OUTPUT_PATH, index=False)
 
-    print("\n=========================================")
-    print(f"✅ 병합 완료: 총 {len(combined_df)}행")
-    print(f"✅ 최종 저장 위치: {OUTPUT_PATH}")
+    print("=========================================")
+    print(f"[OK] Merge complete: {len(combined_df)} rows")
+    print(f"[OK] Output: {OUTPUT_PATH}")
     print("=========================================")
 
-    # label 분포 확인
     if "label" in combined_df.columns:
-        print("\n[Label 분포]")
+        print("\n[Label distribution]")
         print(combined_df["label"].value_counts().sort_index())
 
 

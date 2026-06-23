@@ -1,4 +1,5 @@
 import time
+import re
 from scapy.all import sniff
 from collections import defaultdict
 import threading
@@ -10,6 +11,8 @@ from pathlib import Path
 # 1. 초기 환경 설정
 # ---------------------------------------------------------
 AUTH_LOG_PATH = "/var/log/auth.log"
+DNS_LOG_PATH = os.getenv("DNS_LOG_PATH", "/var/log/dnsmasq.log")
+ENABLE_DNS_LOG_MONITOR = os.getenv("ENABLE_DNS_LOG_MONITOR", "1") == "1"
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -58,6 +61,23 @@ time_stats = defaultdict(
 ip_mac_table = {}
 
 
+def get_current_bucket():
+    return (int(time.time()) // WINDOW_SIZE) * WINDOW_SIZE
+
+
+def add_dns_query_feature(bucket, src_ip=None):
+    s = time_stats[bucket]
+
+    # Keep DNS log-derived rows aligned with the training feature meaning.
+    s["total_pkt_cnt"] += 1
+    s["udp_cnt"] += 1
+    s["dns_query_cnt"] += 1
+    s["_dst_ports"].add(53)
+
+    if src_ip:
+        s["_src_ips"].add(src_ip)
+
+
 # ---------------------------------------------------------
 # 4. [스레드 1] 시스템 로그 감시 (SSH Brute Force 담당)
 # ---------------------------------------------------------
@@ -78,7 +98,8 @@ def monitor_auth_log():
                 # 새 로그 중 "비밀번호 실패" 문구가 발견되면
                 if "Failed password" in line:
                     # 현재 시간을 5초 단위 바구니로 환산해서 실패 카운트 1 증가
-                    current_bucket = (int(time.time()) // WINDOW_SIZE) * WINDOW_SIZE
+                    current_bucket = get_current_bucket()
+                    time_stats[current_bucket]["total_pkt_cnt"] += 1
                     time_stats[current_bucket]["failed_login_cnt"] += 1
     except PermissionError:
         # auth.log는 루트 권한 없이 못 읽으므로 권한 부족 시 에러 메시지 출력
@@ -88,6 +109,37 @@ def monitor_auth_log():
 # ---------------------------------------------------------
 # 5. [스레드 2] 실시간 네트워크 패킷 감시 (Scapy Sniffer)
 # ---------------------------------------------------------
+def monitor_dns_log():
+    if not ENABLE_DNS_LOG_MONITOR:
+        return
+
+    query_pattern = re.compile(r"\bquery\[[^\]]+\]\s+\S+\s+from\s+([0-9a-fA-F:.]+)")
+
+    try:
+        with open(DNS_LOG_PATH, "r", encoding="utf-8", errors="ignore") as f:
+            f.seek(0, 2)
+
+            while True:
+                line = f.readline()
+                if not line:
+                    time.sleep(0.1)
+                    continue
+
+                match = query_pattern.search(line)
+                if not match:
+                    continue
+
+                add_dns_query_feature(
+                    bucket=get_current_bucket(),
+                    src_ip=match.group(1),
+                )
+
+    except FileNotFoundError:
+        print(f"[!] DNS log file not found: {DNS_LOG_PATH}")
+    except PermissionError:
+        print(f"[!] Permission denied while reading DNS log: {DNS_LOG_PATH}")
+
+
 def process_packet(pkt):
     # 패킷 도착 시간을 5초 단위 바구니 시간으로 환산
     current_bucket = (int(pkt.time) // WINDOW_SIZE) * WINDOW_SIZE
@@ -113,13 +165,14 @@ def process_packet(pkt):
         elif pkt.haslayer("UDP"):
             s["udp_cnt"] += 1
             s["_dst_ports"].add(pkt["UDP"].dport)
-            # DNS 쿼리 요청(qr == 0)일 때만 카운트
-            if pkt.haslayer("DNS") and pkt["DNS"].qr == 0:
-                s["dns_query_cnt"] += 1
 
         # ICMP 패킷 분석 (Ping Flood 탐지용)
         elif pkt.haslayer("ICMP"):
             s["icmp_cnt"] += 1
+
+        # DNS query count should work for both UDP and TCP DNS traffic.
+        if pkt.haslayer("DNS") and pkt["DNS"].qr == 0:
+            s["dns_query_cnt"] += 1
 
     # ARP 계층 패킷 분석 (ARP Spoofing 탐지용)
     elif pkt.haslayer("ARP"):
@@ -160,6 +213,7 @@ def run_sniffer():
 # ---------------------------------------------------------
 # daemon=True: 메인 프로그램이 종료되면 이 스레드들도 같이 강제 종료되도록 설정
 threading.Thread(target=monitor_auth_log, daemon=True).start()
+threading.Thread(target=monitor_dns_log, daemon=True).start()
 threading.Thread(target=run_sniffer, daemon=True).start()
 
 print(f"[*] Extractor 가동 중... (5초 단위 특징 추출 -> {FEATURE_OUT_FILE})")

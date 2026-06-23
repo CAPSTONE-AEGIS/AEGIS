@@ -172,6 +172,115 @@ def reorder_columns(df):
     return df[first_cols + other_cols]
 
 
+def safe_int(row, column):
+    value = row.get(column, 0)
+
+    if pd.isna(value):
+        return 0
+
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
+def format_confidence(value):
+    if value is None or pd.isna(value):
+        return "confidence n/a"
+
+    try:
+        return f"confidence {float(value) * 100:.0f}%"
+    except (TypeError, ValueError):
+        return "confidence n/a"
+
+
+def render_attack_mix(df):
+    st.markdown("##### 유형별 분포")
+
+    attack_order = [
+        "ICMP Flood",
+        "SSH Brute Force",
+        "ARP Spoofing",
+        "Port Scan",
+        "DNS Anomaly",
+        "SUSPICIOUS",
+        "UNKNOWN",
+        "NORMAL",
+    ]
+    counts = df["attack_type"].value_counts()
+    max_count = max(int(counts.max()), 1)
+
+    for attack_type in attack_order:
+        count = int(counts.get(attack_type, 0))
+        progress = count / max_count
+        st.caption(f"{attack_type} · {count}")
+        st.progress(progress)
+
+
+def render_latest_snapshot(recent):
+    st.markdown("##### 실시간 특징값")
+
+    snapshot_cols = st.columns(2)
+    snapshot_items = [
+        ("전체 패킷", "total_pkt_cnt"),
+        ("TCP", "tcp_cnt"),
+        ("UDP", "udp_cnt"),
+        ("ICMP", "icmp_cnt"),
+        ("DNS 질의", "dns_query_cnt"),
+        ("SSH 실패", "failed_login_cnt"),
+        ("대상 포트", "unique_dst_port_cnt"),
+        ("출발지 IP", "unique_src_ip_cnt"),
+    ]
+
+    for index, (label, column) in enumerate(snapshot_items):
+        with snapshot_cols[index % 2]:
+            st.metric(label, safe_int(recent, column))
+
+
+def render_recent_feed(df):
+    st.markdown("##### 최근 이벤트")
+
+    feed_cols = [
+        "timestamp",
+        "attack_type",
+        "confidence",
+        "risk_level",
+        "suspicious_candidate",
+    ]
+    existing_cols = [col for col in feed_cols if col in df.columns]
+    feed = df.iloc[::-1].head(8)
+
+    for _, row in feed.iterrows():
+        attack_type = row.get("attack_type", "UNKNOWN")
+        risk_level = row.get("risk_level", "UNKNOWN")
+        confidence_text = format_confidence(row.get("confidence"))
+        timestamp = row.get("timestamp", "-")
+
+        event_text = f"**{attack_type}**  \n{timestamp} · {confidence_text} · {risk_level}"
+
+        if "suspicious_candidate" in existing_cols and row.get("suspicious_candidate"):
+            event_text += f"  \n{row.get('suspicious_candidate')}"
+
+        st.markdown(event_text)
+
+
+def render_bottom_summary(df):
+    st.markdown("---")
+    st.subheader("실시간 요약 패널")
+
+    mix_col, snapshot_col, feed_col = st.columns([1, 1, 1])
+    recent = df.iloc[-1]
+
+    with mix_col:
+        render_attack_mix(df)
+
+    with snapshot_col:
+        render_latest_snapshot(recent)
+
+    with feed_col:
+        render_recent_feed(df)
+
+
 placeholder = st.empty()
 
 with placeholder.container():
@@ -246,6 +355,8 @@ with placeholder.container():
             st.line_chart(df[existing_cols].tail(30))
         else:
             st.info("표시할 feature 컬럼이 아직 없습니다.")
+
+        render_bottom_summary(df)
 
     else:
         st.info(

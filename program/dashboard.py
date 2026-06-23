@@ -85,14 +85,11 @@ def add_dashboard_fields(df):
 
     df = df.copy()
     df["attack_type"] = df.apply(get_attack_type, axis=1)
+
     if "alert_message" in df.columns:
         df.loc[df["attack_type"] == "UNKNOWN", "alert_message"] = (
             "UNKNOWN traffic detected"
         )
-
-    df["response_recommendation"] = df["attack_type"].map(
-        RESPONSE_RECOMMENDATIONS
-    ).fillna("상세 로그와 원본 패킷을 확인한 뒤 방화벽, 계정, DNS, ARP 정책을 점검하세요.")
 
     return df
 
@@ -118,6 +115,7 @@ with placeholder.container():
             "attack_type", LABEL_MAP.get(recent_label, "UNKNOWN")
         )
         recent_risk = recent.get("risk_level", "UNKNOWN")
+
         col1, col2, col3 = st.columns(3)
 
         col1.metric("총 수집 로그", f"{total_logs} 건")

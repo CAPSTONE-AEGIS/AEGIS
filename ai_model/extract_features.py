@@ -119,27 +119,47 @@ def extract_to_csv(input_file, output_csv, label):
     # ---------------------------------------------------------
     elif file_ext in [".txt", ".log"]:
         fail_pattern = re.compile(r"Failed password", re.IGNORECASE)
+        dns_query_pattern = re.compile(
+            r"\bquery\[[^\]]+\]\s+\S+\s+from\s+([0-9a-fA-F:.]+)",
+            re.IGNORECASE,
+        )
         time_pattern = re.compile(r"\d{2}:\d{2}:\d{2}")
 
         with open(input_file, "r", encoding="utf-8", errors="ignore") as f:
-            for line_idx, line in enumerate(f):
-                time_match = time_pattern.search(line)
+            lines = f.readlines()
 
-                if time_match:
-                    h, m, sec = map(int, time_match.group().split(":"))
-                    sec_5 = (sec // WINDOW_SIZE) * WINDOW_SIZE
-                    ts = f"{h:02d}:{m:02d}:{sec_5:02d}"
-                else:
-                    # 시간이 없는 로그는 5줄 단위 임시 bucket
-                    ts = f"block_{(line_idx // WINDOW_SIZE) * WINDOW_SIZE}"
+        is_dns_log = any(dns_query_pattern.search(line) for line in lines)
 
-                s = time_stats[ts]
+        for line_idx, line in enumerate(lines):
+            time_match = time_pattern.search(line)
 
-                # 로그 파일에서는 이 값을 "로그 라인 수"처럼 사용
+            if time_match:
+                h, m, sec = map(int, time_match.group().split(":"))
+                sec_5 = (sec // WINDOW_SIZE) * WINDOW_SIZE
+                ts = f"{h:02d}:{m:02d}:{sec_5:02d}"
+            else:
+                # 시간이 없는 로그는 5줄 단위 임시 bucket
+                ts = f"block_{(line_idx // WINDOW_SIZE) * WINDOW_SIZE}"
+
+            s = time_stats[ts]
+            dns_match = dns_query_pattern.search(line)
+
+            if is_dns_log:
+                if not dns_match:
+                    continue
+
                 s["total_pkt_cnt"] += 1
+                s["udp_cnt"] += 1
+                s["dns_query_cnt"] += 1
+                s["_dst_ports"].add(53)
+                s["_src_ips"].add(dns_match.group(1))
+                continue
 
-                if fail_pattern.search(line):
-                    s["failed_login_cnt"] += 1
+            # 로그 파일에서는 이 값을 "로그 라인 수"처럼 사용
+            s["total_pkt_cnt"] += 1
+
+            if fail_pattern.search(line):
+                s["failed_login_cnt"] += 1
 
     else:
         print(f"❌ 지원하지 않는 확장자: {file_ext}")
@@ -185,8 +205,8 @@ if __name__ == "__main__":
     # 1: ICMP Flood
     # 2: Port Scan
     # 3: SSH Brute Force
-    # 4: DNS Anomaly
-    # 5: ARP Spoofing
+    # 4: ARP Spoofing
+    # 5: DNS Anomaly
 
     jobs = [
         {
@@ -212,12 +232,12 @@ if __name__ == "__main__":
         {
             "input": RAW_DATA_DIR / "dns_anomaly" / "dns_anomaly.pcap",
             "output": PROCESSED_DATA_DIR / "dns_features.csv",
-            "label": 4,
+            "label": 5,
         },
         {
             "input": RAW_DATA_DIR / "arp_spoofing" / "arp_spoofing.pcap",
             "output": PROCESSED_DATA_DIR / "arp_features.csv",
-            "label": 5,
+            "label": 4,
         },
     ]
 

@@ -24,7 +24,7 @@ LABEL_MAP = {
 
 RESPONSE_RECOMMENDATIONS = {
     "NORMAL": "정상 패턴입니다. 현재 모니터링을 유지하세요.",
-    "UNKNOWN": "모델 확신도가 낮습니다. 원본 패킷과 로그를 확인하고 임계값 조정 여부를 검토하세요.",
+    "UNKNOWN": "모델 확신도가 낮습니다.",
     "SUSPICIOUS": "정상 패턴에서 벗어난 트래픽입니다. 출발지 IP와 최근 세션을 우선 확인하고 필요 시 차단하세요.",
     "ICMP Flood": "ICMP 요청 비율을 제한하고 반복 출발지 IP를 방화벽에서 차단하세요.",
     "Port Scan": "스캔 출발지 IP를 확인하고 불필요하게 열린 포트와 방화벽 정책을 점검하세요.",
@@ -86,6 +86,11 @@ def add_dashboard_fields(df):
 
     df = df.copy()
     df["attack_type"] = df.apply(get_attack_type, axis=1)
+    if "alert_message" in df.columns:
+        df.loc[df["attack_type"] == "UNKNOWN", "alert_message"] = (
+            "UNKNOWN traffic detected"
+        )
+
     df["response_recommendation"] = df["attack_type"].map(
         RESPONSE_RECOMMENDATIONS
     ).fillna("상세 로그와 원본 패킷을 확인한 뒤 방화벽, 계정, DNS, ARP 정책을 점검하세요.")

@@ -181,13 +181,7 @@ def main():
                             f"anomaly_score={anomaly_score})"
                         )
                     elif label == UNKNOWN_LABEL:
-                        model_label = record.get("model_label")
-                        confidence = record.get("confidence")
-                        model_attack = LABEL_MAP.get(model_label, "UNKNOWN")
-                        record["alert_message"] = (
-                            f"UNKNOWN traffic detected "
-                            f"(model={model_attack}, confidence={confidence})"
-                        )
+                        record["alert_message"] = "UNKNOWN traffic detected"
                     elif label == 0:
                         record["alert_message"] = "정상 트래픽으로 판단됨"
                     else:

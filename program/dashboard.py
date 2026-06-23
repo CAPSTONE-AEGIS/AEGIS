@@ -38,7 +38,6 @@ PRIORITY_COLUMNS = [
     "attack_type",
     "risk_level",
     "alert_message",
-    "response_recommendation",
 ]
 
 
@@ -99,6 +98,7 @@ def add_dashboard_fields(df):
 
 
 def reorder_columns(df):
+    df = df.drop(columns=["response_recommendation"], errors="ignore")
     first_cols = [col for col in PRIORITY_COLUMNS if col in df.columns]
     other_cols = [col for col in df.columns if col not in first_cols]
     return df[first_cols + other_cols]
@@ -118,11 +118,6 @@ with placeholder.container():
             "attack_type", LABEL_MAP.get(recent_label, "UNKNOWN")
         )
         recent_risk = recent.get("risk_level", "UNKNOWN")
-        recent_recommendation = recent.get(
-            "response_recommendation",
-            RESPONSE_RECOMMENDATIONS.get(recent_attack, ""),
-        )
-
         col1, col2, col3 = st.columns(3)
 
         col1.metric("총 수집 로그", f"{total_logs} 건")
@@ -134,7 +129,6 @@ with placeholder.container():
 
         col3.metric("위험도", recent_risk)
 
-        st.info(recent_recommendation)
         st.markdown("---")
 
         chart_col, table_col = st.columns([1, 2])

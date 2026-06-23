@@ -56,7 +56,12 @@ print("[*] AI 모델 학습을 시작합니다.")
 # ---------------------------------------------------------
 # 5. 랜덤 포레스트 모델 생성 및 학습
 # ---------------------------------------------------------
-model = RandomForestClassifier(n_estimators=100, random_state=42)
+model = RandomForestClassifier(
+    n_estimators=300,
+    min_samples_leaf=2,
+    class_weight="balanced",
+    random_state=42,
+)
 
 model.fit(X_train, y_train)
 

@@ -11,8 +11,15 @@ from pathlib import Path
 # 1. 초기 환경 설정
 # ---------------------------------------------------------
 AUTH_LOG_PATH = "/var/log/auth.log"
-DNS_LOG_PATH = os.getenv("DNS_LOG_PATH", "/var/log/dnsmasq.log")
 ENABLE_DNS_LOG_MONITOR = os.getenv("ENABLE_DNS_LOG_MONITOR", "1") == "1"
+DNS_LOG_PATHS = [
+    path
+    for path in os.getenv(
+        "DNS_LOG_PATH",
+        os.pathsep.join(["/var/log/dnsmasq.log", "/var/log/syslog"]),
+    ).split(os.pathsep)
+    if path
+]
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -111,33 +118,43 @@ def monitor_auth_log():
 # ---------------------------------------------------------
 def monitor_dns_log():
     if not ENABLE_DNS_LOG_MONITOR:
+        print("[*] DNS log monitor disabled")
         return
 
     query_pattern = re.compile(r"\bquery\[[^\]]+\]\s+\S+\s+from\s+([0-9a-fA-F:.]+)")
 
-    try:
-        with open(DNS_LOG_PATH, "r", encoding="utf-8", errors="ignore") as f:
-            f.seek(0, 2)
+    while True:
+        dns_log_path = next((path for path in DNS_LOG_PATHS if os.path.exists(path)), None)
 
-            while True:
-                line = f.readline()
-                if not line:
-                    time.sleep(0.1)
-                    continue
+        if dns_log_path is None:
+            print(f"[!] DNS log file not found; retrying: {DNS_LOG_PATHS}")
+            time.sleep(5)
+            continue
 
-                match = query_pattern.search(line)
-                if not match:
-                    continue
+        try:
+            print(f"[*] DNS log monitor enabled: {dns_log_path}")
 
-                add_dns_query_feature(
-                    bucket=get_current_bucket(),
-                    src_ip=match.group(1),
-                )
+            with open(dns_log_path, "r", encoding="utf-8", errors="ignore") as f:
+                f.seek(0, 2)
 
-    except FileNotFoundError:
-        print(f"[!] DNS log file not found: {DNS_LOG_PATH}")
-    except PermissionError:
-        print(f"[!] Permission denied while reading DNS log: {DNS_LOG_PATH}")
+                while True:
+                    line = f.readline()
+                    if not line:
+                        time.sleep(0.1)
+                        continue
+
+                    match = query_pattern.search(line)
+                    if not match:
+                        continue
+
+                    add_dns_query_feature(
+                        bucket=get_current_bucket(),
+                        src_ip=match.group(1),
+                    )
+
+        except PermissionError:
+            print(f"[!] Permission denied while reading DNS log; retrying: {dns_log_path}")
+            time.sleep(5)
 
 
 def process_packet(pkt):

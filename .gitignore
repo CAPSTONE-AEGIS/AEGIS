@@ -10,3 +10,9 @@ __pycache__/
 .venv/
 venv/
 .DS_Store
+
+# Raw captures are large local inputs; commit extracted features instead.
+data/raw_data/*
+!data/raw_data/.gitkeep
+data/processed_data/raw_extract_latest/
+data/processed_data/merged_data/*_result.csv
